@@ -96,7 +96,7 @@ func (c *channelPool) Get(label string) (net.Conn, error) {
 			return nil, ErrClosed
 		}
 		wconn := c.wrapConn(conn)
-		c.setLabelConn(label, wconn)
+		c.setLabelConn(label, conn)
 		return wconn, nil
 	default:
 		conn, err := factory()
@@ -104,7 +104,7 @@ func (c *channelPool) Get(label string) (net.Conn, error) {
 			return nil, err
 		}
 		wconn := c.wrapConn(conn)
-		c.setLabelConn(label, wconn)
+		c.setLabelConn(label, conn)
 		return wconn, nil
 	}
 }
