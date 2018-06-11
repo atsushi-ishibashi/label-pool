@@ -9,7 +9,8 @@ conn, err := pool.Get("1111")
 if _, err := conn.Write([]byte("message")); err != nil {
   conn.Close()
 }
+// error出ないときはClose()しなくてよい
 ```
 
 ### Concerned
-- around `setLabelConn`
+- `setLabelConn`が並列で呼ばれた場合に上書きしちゃうのでは?
