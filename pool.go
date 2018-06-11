@@ -17,7 +17,4 @@ type Pool interface {
 	// it back to the Pool. Closing it when the pool is destroyed or full will
 	// be counted as an error.
 	Get(label string) (net.Conn, error)
-
-	// LenMap returns the current number of label map
-	LenMap() int
 }

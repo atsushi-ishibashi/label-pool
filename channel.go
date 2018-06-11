@@ -1,63 +1,59 @@
 package labelpool
 
 import (
-	"io"
+	"errors"
 	"net"
 	"sync"
-	"time"
 )
 
 // channelPool implements the Pool interface based on buffered channels.
 type channelPool struct {
 	cmLock  sync.RWMutex
-	connMap map[string]net.Conn
+	connMap map[int]net.Conn
 
 	// net.Conn generator
 	factory Factory
+
+	mod int
 }
 
 // Factory is a function to create new connections.
 type Factory func() (net.Conn, error)
 
-func NewChannelPool(factory Factory) (Pool, error) {
-	c := &channelPool{
-		connMap: make(map[string]net.Conn),
+func NewChannelPool(mod int, factory Factory) (Pool, error) {
+	if mod <= 0 {
+		return nil, errors.New("invalid mod")
+	}
+	return &channelPool{
+		connMap: make(map[int]net.Conn),
 		factory: factory,
-	}
-
-	go c.loopCheck()
-
-	return c, nil
-}
-
-func (c *channelPool) loopCheck() {
-	for {
-		c.cmLock.Lock()
-		for label, conn := range c.connMap {
-			one := make([]byte, 1)
-			conn.SetReadDeadline(time.Now().Add(10 * time.Millisecond))
-			if _, err := conn.Read(one); err == io.EOF {
-				delete(c.connMap, label)
-				conn.Close()
-			}
-		}
-		c.cmLock.Unlock()
-
-		time.Sleep(60 * time.Second)
-	}
+		mod:     mod,
+	}, nil
 }
 
 func (c *channelPool) setLabelConn(label string, conn net.Conn) {
 	c.cmLock.Lock()
 	defer c.cmLock.Unlock()
-	c.connMap[label] = conn
+	m := c.labeltoi(label)
+	if c, ok := c.connMap[m]; ok {
+		c.Close()
+	}
+	c.connMap[m] = conn
 }
 
 func (c *channelPool) getLabelConn(label string) (conn net.Conn, ok bool) {
 	c.cmLock.RLock()
 	defer c.cmLock.RUnlock()
-	conn, ok = c.connMap[label]
+	conn, ok = c.connMap[c.labeltoi(label)]
 	return
+}
+
+func (c *channelPool) labeltoi(label string) int {
+	total := 0
+	for _, v := range []byte(label) {
+		total += int(v)
+	}
+	return total % c.mod
 }
 
 // Get implements the Pool interfaces Get() method. If there is no new
@@ -65,7 +61,7 @@ func (c *channelPool) getLabelConn(label string) (conn net.Conn, ok bool) {
 // Factory() method.
 func (c *channelPool) Get(label string) (net.Conn, error) {
 	if conn, ok := c.getLabelConn(label); ok {
-		return conn, nil
+		return c.wrapConn(conn), nil
 	}
 
 	conn, err := c.factory()
@@ -73,7 +69,7 @@ func (c *channelPool) Get(label string) (net.Conn, error) {
 		return nil, err
 	}
 	c.setLabelConn(label, conn)
-	return conn, nil
+	return c.wrapConn(conn), nil
 }
 
 func (c *channelPool) deleteLabelConn(conn net.Conn) {
@@ -84,10 +80,4 @@ func (c *channelPool) deleteLabelConn(conn net.Conn) {
 			delete(c.connMap, k)
 		}
 	}
-}
-
-func (c *channelPool) LenMap() int {
-	c.cmLock.RLock()
-	defer c.cmLock.RUnlock()
-	return len(c.connMap)
 }
